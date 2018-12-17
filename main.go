@@ -15,8 +15,9 @@ import (
 	parser "github.com/openvenues/gopostal/parser"
 )
 
+// Request format for single query requests
 type Request struct {
-	Query string `json:"query"`
+	Queries []string `json:"queries"`
 }
 
 func main() {
@@ -30,9 +31,6 @@ func main() {
 	}
 	listenSpec := fmt.Sprintf("%s:%s", host, port)
 
-	certFile := os.Getenv("SSL_CERT_FILE")
-	keyFile := os.Getenv("SSL_KEY_FILE")
-
 	router := mux.NewRouter()
 	router.HandleFunc("/health", HealthHandler).Methods("GET")
 	router.HandleFunc("/expand", ExpandHandler).Methods("POST")
@@ -40,13 +38,8 @@ func main() {
 
 	s := &http.Server{Addr: listenSpec, Handler: router}
 	go func() {
-		if certFile != "" && keyFile != "" {
-			fmt.Printf("listening on https://%s\n", listenSpec)
-			s.ListenAndServeTLS(certFile, keyFile)
-		} else {
-			fmt.Printf("listening on http://%s\n", listenSpec)
-			s.ListenAndServe()
-		}
+		fmt.Printf("listening on http://%s\n", listenSpec)
+		s.ListenAndServe()
 	}()
 
 	stop := make(chan os.Signal)
@@ -59,11 +52,13 @@ func main() {
 	fmt.Println("Server stopped")
 }
 
+// HealthHandler always returns an OK response if the service is healthy
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
+// ExpandHandler calls the libpostal expand functionality
 func ExpandHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -72,12 +67,18 @@ func ExpandHandler(w http.ResponseWriter, r *http.Request) {
 	q, _ := ioutil.ReadAll(r.Body)
 	json.Unmarshal(q, &req)
 
-	expansions := expand.ExpandAddress(req.Query)
+	result := make([][]string, len(req.Queries))
 
-	expansionThing, _ := json.Marshal(expansions)
-	w.Write(expansionThing)
+	for i := 0; i < len(req.Queries); i++ {
+		expansions := expand.ExpandAddress(req.Queries[i])
+		result[i] = expansions
+	}
+
+	serializedResult, _ := json.Marshal(result)
+	w.Write(serializedResult)
 }
 
+// ParserHandler calls the libpostal parse functionality
 func ParserHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -86,7 +87,13 @@ func ParserHandler(w http.ResponseWriter, r *http.Request) {
 	q, _ := ioutil.ReadAll(r.Body)
 	json.Unmarshal(q, &req)
 
-	parsed := parser.ParseAddress(req.Query)
-	parseThing, _ := json.Marshal(parsed)
-	w.Write(parseThing)
+	result := make([][]parser.ParsedComponent, len(req.Queries))
+
+	for i := 0; i < len(req.Queries); i++ {
+		parsed := parser.ParseAddress(req.Queries[i])
+		result[i] = parsed
+	}
+
+	serializedResult, _ := json.Marshal(result)
+	w.Write(serializedResult)
 }
